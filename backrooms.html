@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#cba135">
+<title>The Backrooms</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    color: #f0d77a;
+    font-family: "Courier New", monospace;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    overscroll-behavior: none;
+  }
+  #game {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #1a1408;
+  }
+  #hud {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #stats {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    left: max(12px, env(safe-area-inset-left));
+    font-size: 12px;
+    color: rgba(240, 215, 122, 0.7);
+    text-shadow: 1px 1px 0 #000;
+    line-height: 1.4;
+  }
+  #hint {
+    position: absolute;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: rgba(240, 215, 122, 0.5);
+    text-shadow: 1px 1px 0 #000;
+    text-align: center;
+    transition: opacity 1s;
+  }
+  #joy {
+    position: absolute;
+    width: 100px; height: 100px;
+    border: 2px solid rgba(240, 215, 122, 0.4);
+    border-radius: 50%;
+    pointer-events: none;
+    display: none;
+    transform: translate(-50%, -50%);
+  }
+  #joy::after {
+    content: "";
+    position: absolute;
+    width: 40px; height: 40px;
+    background: rgba(240, 215, 122, 0.4);
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px)));
+  }
+  #joy.show { display: block; }
+  #overlay {
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at center, #2a2010 0%, #000 80%);
+    color: #f0d77a;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    text-align: center;
+    transition: opacity 0.6s;
+  }
+  #overlay.hide { opacity: 0; pointer-events: none; }
+  #overlay h1 {
+    font-size: clamp(28px, 8vw, 56px);
+    letter-spacing: 0.2em;
+    margin-bottom: 12px;
+    text-shadow: 0 0 20px #cba135, 0 0 4px #fff;
+  }
+  #overlay p {
+    font-size: clamp(12px, 3.5vw, 16px);
+    max-width: 380px;
+    line-height: 1.6;
+    opacity: 0.8;
+    margin-bottom: 24px;
+  }
+  #overlay button {
+    background: #cba135;
+    border: none;
+    color: #1a1408;
+    padding: 14px 36px;
+    font-size: 18px;
+    font-family: inherit;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    border-radius: 4px;
+    box-shadow: 0 0 24px rgba(203, 161, 53, 0.5);
+  }
+  #overlay button:active { transform: scale(0.96); }
+  #crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 4px; height: 4px;
+    background: rgba(240, 215, 122, 0.4);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="stats">THE BACKROOMS<br><span id="depth">DEPTH: 0m</span></div>
+  <div id="crosshair"></div>
+  <div id="hint">LEFT: move &middot; RIGHT: look</div>
+</div>
+<div id="joy"></div>
+<div id="overlay">
+  <h1>THE&nbsp;BACKROOMS</h1>
+  <p>You've noclipped out of reality. The endless yellow halls hum with fluorescent lights. There is no exit. Only wandering.</p>
+  <button id="enter">ENTER</button>
+</div>
+<script>
+(() => {
+  const W = 320, H = 200;
+  const MAP_SIZE = 48;
+  const FOV = 0.66;
+  const FOG_DIST = 9;
+
+  const canvas = document.getElementById('game');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  // ---- Map generation ----
+  const map = new Uint8Array(MAP_SIZE * MAP_SIZE);
+  function cell(x, y) {
+    if (x < 0 || y < 0 || x >= MAP_SIZE || y >= MAP_SIZE) return 1;
+    return map[y * MAP_SIZE + x];
+  }
+  function setCell(x, y, v) {
+    if (x >= 0 && y >= 0 && x < MAP_SIZE && y < MAP_SIZE) map[y * MAP_SIZE + x] = v;
+  }
+
+  function genMap() {
+    map.fill(0);
+    // border
+    for (let i = 0; i < MAP_SIZE; i++) {
+      setCell(i, 0, 1); setCell(i, MAP_SIZE - 1, 1);
+      setCell(0, i, 1); setCell(MAP_SIZE - 1, i, 1);
+    }
+    // long wall segments (corridors)
+    for (let i = 0; i < 80; i++) {
+      const x = 2 + (Math.random() * (MAP_SIZE - 4)) | 0;
+      const y = 2 + (Math.random() * (MAP_SIZE - 4)) | 0;
+      const len = 3 + (Math.random() * 7) | 0;
+      const horiz = Math.random() < 0.5;
+      for (let j = 0; j < len; j++) {
+        const cx = horiz ? x + j : x;
+        const cy = horiz ? y : y + j;
+        if (cx > 0 && cx < MAP_SIZE - 1 && cy > 0 && cy < MAP_SIZE - 1) setCell(cx, cy, 1);
+      }
+      // gap (doorway)
+      if (len > 4) {
+        const g = 1 + (Math.random() * (len - 2)) | 0;
+        if (horiz) setCell(x + g, y, 0);
+        else setCell(x, y + g, 0);
+      }
+    }
+    // pillars
+    for (let i = 0; i < 60; i++) {
+      const x = 2 + (Math.random() * (MAP_SIZE - 4)) | 0;
+      const y = 2 + (Math.random() * (MAP_SIZE - 4)) | 0;
+      setCell(x, y, 1);
+    }
+    // clear spawn area 5x5
+    for (let y = 1; y <= 5; y++) for (let x = 1; x <= 5; x++) setCell(x, y, 0);
+  }
+  genMap();
+
+  // ---- Textures ----
+  const TS = 64;
+  function buildTex(fn) {
+    const data = new Uint8ClampedArray(TS * TS * 4);
+    for (let y = 0; y < TS; y++) {
+      for (let x = 0; x < TS; x++) {
+        const i = (y * TS + x) * 4;
+        const c = fn(x, y);
+        data[i] = c[0]; data[i + 1] = c[1]; data[i + 2] = c[2]; data[i + 3] = 255;
+      }
+    }
+    return data;
+  }
+
+  const wallTex = buildTex((x, y) => {
+    let r = 215, g = 175, b = 80;
+    // horizontal seams every 16
+    if (y % 16 === 0) { r = 130; g = 100; b = 45; }
+    // vertical seams (offset row to row, brick-like)
+    const off = ((y / 16) | 0) % 2 ? 16 : 0;
+    if ((x + off) % 32 === 0) { r = 130; g = 100; b = 45; }
+    // scuff/stain spots
+    const sx = x - 28, sy = y - 44;
+    if (sx * sx + sy * sy < 20) { r -= 40; g -= 30; b -= 15; }
+    // grain noise
+    const n = (Math.random() - 0.5) * 22;
+    return [r + n, g + n, b + n];
+  });
+
+  const floorTex = buildTex((x, y) => {
+    let r = 165, g = 130, b = 60;
+    // subtle stripe pattern (carpet weave)
+    if ((x ^ y) & 1) { r -= 8; g -= 6; b -= 3; }
+    // stains
+    if (((x * 7 + y * 11) % 53) < 4) { r -= 30; g -= 25; b -= 12; }
+    const n = (Math.random() - 0.5) * 18;
+    return [r + n, g + n, b + n];
+  });
+
+  const ceilTex = buildTex((x, y) => {
+    // ceiling tile grid 16x16
+    const tx = x % 16, ty = y % 16;
+    let r = 218, g = 205, b = 155;
+    if (tx === 0 || ty === 0) { r = 150; g = 135; b = 90; }
+    // light fixtures: bright strip
+    const cx = x % 64, cy = y % 64;
+    if (cy >= 6 && cy <= 10 && cx >= 12 && cx <= 52) {
+      r = 255; g = 252; b = 220;
+    }
+    if ((cy === 5 || cy === 11) && cx >= 11 && cx <= 53) {
+      r = 200; g = 180; b = 130;
+    }
+    const n = (Math.random() - 0.5) * 12;
+    return [r + n, g + n, b + n];
+  });
+
+  // ---- Player ----
+  const player = { x: 2.5, y: 2.5, angle: 0.3 };
+  let dirX, dirY, planeX, planeY;
+  function updateDir() {
+    dirX = Math.cos(player.angle);
+    dirY = Math.sin(player.angle);
+    planeX = -Math.sin(player.angle) * FOV;
+    planeY = Math.cos(player.angle) * FOV;
+  }
+  updateDir();
+
+  let flicker = 1;
+  let totalDist = 0;
+
+  // ---- Render ----
+  const imgData = ctx.createImageData(W, H);
+  const px = imgData.data;
+  const halfH = H / 2;
+
+  function castFrame() {
+    // Floor + ceiling per row
+    const rdx0 = dirX - planeX, rdy0 = dirY - planeY;
+    const rdx1 = dirX + planeX, rdy1 = dirY + planeY;
+
+    for (let y = 0; y < H; y++) {
+      const isFloor = y >= halfH;
+      const p = isFloor ? y - halfH : halfH - y;
+      if (p === 0) continue;
+      const rowDist = halfH / p;
+      const fog = Math.min(1, rowDist / FOG_DIST);
+      const fogStr = fog * fog;
+      const fogInv = 1 - fogStr;
+
+      const stepX = rowDist * (rdx1 - rdx0) / W;
+      const stepY = rowDist * (rdy1 - rdy0) / W;
+      let fx = player.x + rowDist * rdx0;
+      let fy = player.y + rowDist * rdy0;
+
+      const tex = isFloor ? floorTex : ceilTex;
+      const ceilLight = isFloor ? 1 : flicker;
+
+      let pi = y * W * 4;
+      for (let x = 0; x < W; x++) {
+        const tx = ((fx * TS) | 0) & (TS - 1);
+        const ty = ((fy * TS) | 0) & (TS - 1);
+        const ti = (ty * TS + tx) * 4;
+        const r = (tex[ti] * ceilLight) * fogInv + 18 * fogStr;
+        const g = (tex[ti + 1] * ceilLight) * fogInv + 16 * fogStr;
+        const b = (tex[ti + 2] * ceilLight) * fogInv + 8 * fogStr;
+        px[pi] = r;
+        px[pi + 1] = g;
+        px[pi + 2] = b;
+        px[pi + 3] = 255;
+        pi += 4;
+        fx += stepX;
+        fy += stepY;
+      }
+    }
+
+    // Walls per column
+    for (let x = 0; x < W; x++) {
+      const cameraX = 2 * x / W - 1;
+      const rdx = dirX + planeX * cameraX;
+      const rdy = dirY + planeY * cameraX;
+
+      let mx = player.x | 0, my = player.y | 0;
+      const ddx = rdx === 0 ? 1e30 : Math.abs(1 / rdx);
+      const ddy = rdy === 0 ? 1e30 : Math.abs(1 / rdy);
+      let stepX, stepY, sdx, sdy;
+
+      if (rdx < 0) { stepX = -1; sdx = (player.x - mx) * ddx; }
+      else { stepX = 1; sdx = (mx + 1 - player.x) * ddx; }
+      if (rdy < 0) { stepY = -1; sdy = (player.y - my) * ddy; }
+      else { stepY = 1; sdy = (my + 1 - player.y) * ddy; }
+
+      let side = 0, hit = 0;
+      for (let i = 0; i < 80 && !hit; i++) {
+        if (sdx < sdy) { sdx += ddx; mx += stepX; side = 0; }
+        else { sdy += ddy; my += stepY; side = 1; }
+        if (cell(mx, my) === 1) hit = 1;
+      }
+      if (!hit) continue;
+
+      const dist = side === 0 ? sdx - ddx : sdy - ddy;
+      if (dist <= 0) continue;
+      const lineH = (H / dist) | 0;
+      const drawStartF = -lineH / 2 + halfH;
+      const drawEndF = lineH / 2 + halfH;
+      const drawStart = drawStartF < 0 ? 0 : drawStartF | 0;
+      const drawEnd = drawEndF >= H ? H : drawEndF | 0;
+
+      let wallX = side === 0 ? player.y + dist * rdy : player.x + dist * rdx;
+      wallX -= Math.floor(wallX);
+      let texX = (wallX * TS) | 0;
+      if (side === 0 && rdx > 0) texX = TS - texX - 1;
+      if (side === 1 && rdy < 0) texX = TS - texX - 1;
+
+      const fog = Math.min(1, dist / FOG_DIST);
+      const fogStr = fog * fog;
+      const fogInv = 1 - fogStr;
+      const shade = side === 0 ? 1 : 0.72;
+
+      const step = TS / lineH;
+      let texPos = (drawStart - drawStartF) * step;
+
+      for (let y = drawStart; y < drawEnd; y++) {
+        const ty = ((texPos) | 0) & (TS - 1);
+        texPos += step;
+        const ti = (ty * TS + texX) * 4;
+        const r = wallTex[ti] * shade * fogInv + 18 * fogStr;
+        const g = wallTex[ti + 1] * shade * fogInv + 16 * fogStr;
+        const b = wallTex[ti + 2] * shade * fogInv + 8 * fogStr;
+        const pi = (y * W + x) * 4;
+        px[pi] = r;
+        px[pi + 1] = g;
+        px[pi + 2] = b;
+        px[pi + 3] = 255;
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+
+    // Vignette overlay (drawn after)
+    const grd = ctx.createRadialGradient(W / 2, H / 2, H / 4, W / 2, H / 2, H * 0.75);
+    grd.addColorStop(0, 'rgba(0,0,0,0)');
+    grd.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // ---- Movement / collision ----
+  function tryMove(nx, ny) {
+    const r = 0.18;
+    const cx = nx > player.x ? nx + r : nx - r;
+    const cy = ny > player.y ? ny + r : ny - r;
+    if (cell(cx | 0, player.y | 0) === 0) player.x = nx;
+    if (cell(player.x | 0, cy | 0) === 0) player.y = ny;
+  }
+
+  // ---- Input ----
+  const keys = {};
+  window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  });
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  let joyId = null, joySX = 0, joySY = 0, joyDx = 0, joyDy = 0;
+  let lookId = null, lookLX = 0;
+  const joyEl = document.getElementById('joy');
+
+  function showJoy(sx, sy, dx, dy) {
+    joyEl.classList.add('show');
+    joyEl.style.left = sx + 'px';
+    joyEl.style.top = sy + 'px';
+    joyEl.style.setProperty('--dx', dx + 'px');
+    joyEl.style.setProperty('--dy', dy + 'px');
+  }
+  function hideJoy() { joyEl.classList.remove('show'); }
+
+  function onTouchStart(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.clientX < window.innerWidth / 2 && joyId === null) {
+        joyId = t.identifier;
+        joySX = t.clientX; joySY = t.clientY;
+        joyDx = 0; joyDy = 0;
+        showJoy(joySX, joySY, 0, 0);
+      } else if (lookId === null) {
+        lookId = t.identifier;
+        lookLX = t.clientX;
+      }
+    }
+  }
+  function onTouchMove(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === joyId) {
+        const dx = t.clientX - joySX;
+        const dy = t.clientY - joySY;
+        const max = 50;
+        const d = Math.hypot(dx, dy);
+        const f = d > max ? max / d : 1;
+        joyDx = dx * f / max;
+        joyDy = dy * f / max;
+        showJoy(joySX, joySY, dx * f, dy * f);
+      } else if (t.identifier === lookId) {
+        const dx = t.clientX - lookLX;
+        player.angle += dx * 0.005;
+        updateDir();
+        lookLX = t.clientX;
+      }
+    }
+  }
+  function onTouchEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joyId) { joyId = null; joyDx = 0; joyDy = 0; hideJoy(); }
+      if (t.identifier === lookId) { lookId = null; }
+    }
+  }
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd);
+  canvas.addEventListener('touchcancel', onTouchEnd);
+
+  // mouse for desktop
+  let mouseDown = false, mouseLX = 0;
+  canvas.addEventListener('mousedown', e => { mouseDown = true; mouseLX = e.clientX; });
+  window.addEventListener('mouseup', () => { mouseDown = false; });
+  window.addEventListener('mousemove', e => {
+    if (!mouseDown) return;
+    player.angle += (e.clientX - mouseLX) * 0.005;
+    mouseLX = e.clientX;
+    updateDir();
+  });
+
+  // ---- Audio: ambient hum ----
+  let audioStarted = false;
+  function startAudio() {
+    if (audioStarted) return;
+    audioStarted = true;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ac = new AC();
+      // 60Hz hum + faint higher harmonic
+      const o1 = ac.createOscillator(); o1.type = 'sine'; o1.frequency.value = 60;
+      const o2 = ac.createOscillator(); o2.type = 'sine'; o2.frequency.value = 120;
+      const g1 = ac.createGain(); g1.gain.value = 0.05;
+      const g2 = ac.createGain(); g2.gain.value = 0.015;
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
+      o1.connect(g1); o2.connect(g2);
+      g1.connect(lp); g2.connect(lp);
+      lp.connect(ac.destination);
+      o1.start(); o2.start();
+    } catch (e) {}
+  }
+
+  // ---- Game loop ----
+  let lastTime = performance.now();
+  let flickerTimer = 0;
+
+  function update(dt) {
+    const moveSpeed = 2.4 * dt;
+    const rotSpeed = 2.5 * dt;
+
+    let mf = 0, ms = 0;
+    if (keys['KeyW'] || keys['ArrowUp']) mf += 1;
+    if (keys['KeyS'] || keys['ArrowDown']) mf -= 1;
+    if (keys['KeyA']) ms -= 1;
+    if (keys['KeyD']) ms += 1;
+    if (keys['ArrowLeft']) { player.angle -= rotSpeed; updateDir(); }
+    if (keys['ArrowRight']) { player.angle += rotSpeed; updateDir(); }
+
+    mf -= joyDy;
+    ms += joyDx;
+
+    if (mf || ms) {
+      const len = Math.hypot(mf, ms);
+      const nmf = mf / len, nms = ms / len;
+      const sx = -planeX / FOV, sy = -planeY / FOV;
+      const ox = player.x, oy = player.y;
+      const nx = player.x + (dirX * nmf + sx * nms) * moveSpeed;
+      const ny = player.y + (dirY * nmf + sy * nms) * moveSpeed;
+      tryMove(nx, ny);
+      totalDist += Math.hypot(player.x - ox, player.y - oy);
+    }
+
+    // light flicker
+    flickerTimer += dt;
+    if (flickerTimer > 0.05) {
+      flickerTimer = 0;
+      flicker = Math.random() < 0.04 ? (0.55 + Math.random() * 0.3) : (0.95 + Math.random() * 0.05);
+    }
+  }
+
+  const depthEl = document.getElementById('depth');
+  let frameCount = 0;
+  function loop(now) {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+    update(dt);
+    castFrame();
+    frameCount++;
+    if ((frameCount & 7) === 0) {
+      depthEl.textContent = 'DEPTH: ' + (totalDist * 1.5 | 0) + 'm';
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---- Start ----
+  const overlay = document.getElementById('overlay');
+  const hint = document.getElementById('hint');
+  document.getElementById('enter').addEventListener('click', () => {
+    overlay.classList.add('hide');
+    startAudio();
+    setTimeout(() => { hint.style.opacity = '0'; }, 5000);
+    requestAnimationFrame(now => { lastTime = now; loop(now); });
+  });
+})();
+</script>
+</body>
+</html>

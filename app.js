@@ -288,6 +288,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     tab.classList.add("active");
     const which = tab.dataset.panel;
     $("panel-" + which).classList.add("active");
+    document.querySelector(".app").classList.toggle("chat-active", which === "chat");
     if (which === "quiz") nextQuiz();
     if (which === "browse") renderBrowse();
     if (which === "learn") renderLearn();

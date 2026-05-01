@@ -19,9 +19,10 @@
   </header>
 
   <div class="tabs">
-    <button class="tab active" data-panel="learn">Flashcards</button>
+    <button class="tab active" data-panel="learn">Cards</button>
     <button class="tab" data-panel="quiz">Quiz</button>
     <button class="tab" data-panel="browse">Browse</button>
+    <button class="tab" data-panel="chat">Chat</button>
   </div>
 
   <div class="category-row" id="categoryRow"></div>
@@ -76,6 +77,46 @@
     <div class="vocab-list" id="vocabList"></div>
   </div>
 
+  <div class="panel" id="panel-chat">
+    <div class="chat-toolbar">
+      <div class="chat-status" id="chatStatus">—</div>
+      <div class="chat-toolbar-buttons">
+        <button class="icon-btn" id="chatClearBtn" title="Clear conversation" aria-label="Clear">🗑</button>
+        <button class="icon-btn" id="chatSettingsBtn" title="Settings" aria-label="Settings">⚙</button>
+      </div>
+    </div>
+    <div class="chat-thread" id="chatThread"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="Type in Chinese, pinyin, or English…" autocomplete="off" />
+      <button class="btn btn-next" id="chatSend">Send</button>
+    </div>
+  </div>
+
+  <div class="modal" id="chatSettings" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Chat settings</h3>
+        <button class="icon-btn" id="settingsClose" aria-label="Close">✕</button>
+      </div>
+      <label class="field">
+        <span>Anthropic API key</span>
+        <input type="password" id="apiKeyInput" placeholder="sk-ant-…" autocomplete="off" />
+        <small>Stored only in this browser. Sent only to api.anthropic.com.</small>
+      </label>
+      <label class="field">
+        <span>Model</span>
+        <select id="modelSelect"></select>
+      </label>
+      <label class="field">
+        <span>Level</span>
+        <select id="levelSelect"></select>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-next btn-full" id="settingsSave">Save</button>
+      </div>
+    </div>
+  </div>
+
   <footer>
     Built as a static website &middot; data stays in your browser &middot;
     <a href="flappy.html">play flappy bird →</a>
@@ -86,5 +127,6 @@
 
 <script src="vocab.js"></script>
 <script src="app.js"></script>
+<script src="chat.js"></script>
 </body>
 </html>

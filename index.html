@@ -1,313 +1,90 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#71c5cf">
-<title>Flappy Bird</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    width: 100%; height: 100%;
-    overflow: hidden;
-    background: #71c5cf;
-    touch-action: none;
-    user-select: none;
-    -webkit-user-select: none;
-    overscroll-behavior: none;
-  }
-  body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-  }
-  canvas {
-    display: block;
-    background: #71c5cf;
-    touch-action: none;
-    max-width: 100vw;
-    max-height: 100vh;
-  }
-</style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0f1226" />
+<meta name="description" content="Learn Mandarin Chinese with flashcards, quizzes, tone-colored pinyin, and native audio." />
+<title>学中文 — Learn Mandarin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E5%AD%A6%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<canvas id="game"></canvas>
-<script>
-(() => {
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
+<div class="app">
+  <header>
+    <h1><span class="zh">学中文</span> Learn Mandarin</h1>
+    <div class="stats" id="stats">0 / 0</div>
+  </header>
 
-  const BASE_W = 400;
-  const BASE_H = 600;
-  const GROUND_HEIGHT = 80;
-  const GRAVITY = 0.5;
-  const FLAP_STRENGTH = -9;
-  const PIPE_SPEED = 3;
-  const PIPE_GAP = 150;
-  const PIPE_WIDTH = 60;
-  const PIPE_INTERVAL = 1500;
+  <div class="tabs">
+    <button class="tab active" data-panel="learn">Flashcards</button>
+    <button class="tab" data-panel="quiz">Quiz</button>
+    <button class="tab" data-panel="browse">Browse</button>
+  </div>
 
-  let scale = 1;
-  function resize() {
-    const dpr = window.devicePixelRatio || 1;
-    const ww = window.innerWidth;
-    const wh = window.innerHeight;
-    const ratio = BASE_W / BASE_H;
-    let cw, ch;
-    if (ww / wh > ratio) {
-      ch = wh;
-      cw = wh * ratio;
-    } else {
-      cw = ww;
-      ch = ww / ratio;
-    }
-    canvas.style.width = cw + 'px';
-    canvas.style.height = ch + 'px';
-    canvas.width = BASE_W * dpr;
-    canvas.height = BASE_H * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  window.addEventListener('resize', resize);
-  resize();
+  <div class="category-row" id="categoryRow"></div>
 
-  const HIGH_SCORE_KEY = 'flappyBirdHighScore';
-  let highScore = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+  <div class="panel active" id="panel-learn">
+    <div class="progress-label">
+      <span id="learnPos">Card 1</span>
+      <span id="learnTotal">of 0</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="learnProgress" style="width:0%"></div></div>
 
-  const bird = {
-    x: BASE_W / 4, y: BASE_H / 2,
-    r: 16, vy: 0, rot: 0,
-    reset() { this.x = BASE_W / 4; this.y = BASE_H / 2; this.vy = 0; this.rot = 0; },
-    flap() { this.vy = FLAP_STRENGTH; },
-    update() { this.vy += GRAVITY; this.y += this.vy; this.rot = Math.max(-25, Math.min(this.vy * 4, 80)); },
-    rect() { return { x: this.x - this.r + 2, y: this.y - this.r + 2, w: this.r * 2 - 4, h: this.r * 2 - 4 }; },
-    draw() {
-      ctx.save();
-      ctx.translate(this.x, this.y);
-      ctx.rotate(this.rot * Math.PI / 180);
-      // body
-      ctx.fillStyle = '#ffd500';
-      ctx.beginPath();
-      ctx.arc(0, 0, this.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#000';
-      ctx.stroke();
-      // wing
-      ctx.fillStyle = '#fc861e';
-      ctx.beginPath();
-      ctx.ellipse(-6, 4, 8, 5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      // eye
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(6, -4, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.arc(7, -4, 2, 0, Math.PI * 2);
-      ctx.fill();
-      // beak
-      ctx.fillStyle = '#dc3c3c';
-      ctx.beginPath();
-      ctx.moveTo(this.r, -3);
-      ctx.lineTo(this.r + 8, 0);
-      ctx.lineTo(this.r, 3);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
-    }
-  };
+    <div class="flash-card" id="flashCard">
+      <div class="hanzi" id="flHanzi">—</div>
+      <div class="pinyin" id="flPinyin"></div>
+      <div class="english" id="flEnglish"></div>
+      <div class="hint" id="flHint">tap to reveal</div>
+    </div>
 
-  let pipes = [];
-  function spawnPipe() {
-    const gapY = 100 + Math.random() * (BASE_H - GROUND_HEIGHT - 200 - PIPE_GAP);
-    pipes.push({ x: BASE_W + 20, gapY, passed: false });
-  }
-  function updatePipes() {
-    for (const p of pipes) p.x -= PIPE_SPEED;
-    pipes = pipes.filter(p => p.x + PIPE_WIDTH > 0);
-  }
-  function drawPipes() {
-    for (const p of pipes) {
-      // top
-      ctx.fillStyle = '#73bf2c';
-      ctx.fillRect(p.x, 0, PIPE_WIDTH, p.gapY);
-      ctx.strokeStyle = '#579121';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(p.x, 0, PIPE_WIDTH, p.gapY);
-      // bottom
-      const by = p.gapY + PIPE_GAP;
-      const bh = BASE_H - GROUND_HEIGHT - by;
-      ctx.fillStyle = '#73bf2c';
-      ctx.fillRect(p.x, by, PIPE_WIDTH, bh);
-      ctx.strokeRect(p.x, by, PIPE_WIDTH, bh);
-      // caps
-      ctx.fillStyle = '#73bf2c';
-      ctx.fillRect(p.x - 4, p.gapY - 24, PIPE_WIDTH + 8, 24);
-      ctx.strokeRect(p.x - 4, p.gapY - 24, PIPE_WIDTH + 8, 24);
-      ctx.fillRect(p.x - 4, by, PIPE_WIDTH + 8, 24);
-      ctx.strokeRect(p.x - 4, by, PIPE_WIDTH + 8, 24);
-    }
-  }
-  function rectsCollide(a, b) {
-    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-  }
-  function checkPipeCollision() {
-    const br = bird.rect();
-    for (const p of pipes) {
-      const top = { x: p.x, y: 0, w: PIPE_WIDTH, h: p.gapY };
-      const bot = { x: p.x, y: p.gapY + PIPE_GAP, w: PIPE_WIDTH, h: BASE_H - GROUND_HEIGHT - (p.gapY + PIPE_GAP) };
-      if (rectsCollide(br, top) || rectsCollide(br, bot)) return true;
-    }
-    return false;
-  }
+    <div class="tone-legend">
+      <span class="tone-1">1st flat</span>
+      <span class="tone-2">2nd rising</span>
+      <span class="tone-3">3rd dipping</span>
+      <span class="tone-4">4th falling</span>
+      <span class="tone-5">neutral</span>
+    </div>
 
-  const clouds = [
-    { x: 80, y: 80, s: 1.0 },
-    { x: 220, y: 140, s: 0.7 },
-    { x: 340, y: 60, s: 1.2 },
-  ];
-  function updateClouds() {
-    for (const c of clouds) {
-      c.x -= 0.4;
-      if (c.x < -80) { c.x = BASE_W + 40; c.y = 40 + Math.random() * 160; }
-    }
-  }
-  function drawClouds() {
-    ctx.fillStyle = '#f0f0f0';
-    for (const c of clouds) {
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, 18 * c.s, 0, Math.PI * 2);
-      ctx.arc(c.x + 18 * c.s, c.y - 6 * c.s, 22 * c.s, 0, Math.PI * 2);
-      ctx.arc(c.x + 38 * c.s, c.y, 18 * c.s, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
+    <div class="controls">
+      <button class="btn btn-prev" id="btnPrev">← Prev</button>
+      <button class="btn btn-audio" id="btnSpeak">🔊 Listen</button>
+      <button class="btn btn-next" id="btnNext">Next →</button>
+      <button class="btn btn-known btn-full" id="btnKnown">✓ I know this</button>
+    </div>
+  </div>
 
-  let groundOffset = 0;
-  function drawGround() {
-    const gy = BASE_H - GROUND_HEIGHT;
-    ctx.fillStyle = '#deb887';
-    ctx.fillRect(0, gy, BASE_W, GROUND_HEIGHT);
-    ctx.strokeStyle = '#a07850';
-    ctx.lineWidth = 2;
-    const sw = 24;
-    for (let i = -1; i < BASE_W / sw + 2; i++) {
-      const x = i * sw - (groundOffset % sw);
-      ctx.beginPath();
-      ctx.moveTo(x, gy);
-      ctx.lineTo(x + sw / 2, gy + GROUND_HEIGHT);
-      ctx.stroke();
-    }
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(0, gy);
-    ctx.lineTo(BASE_W, gy);
-    ctx.stroke();
-  }
+  <div class="panel" id="panel-quiz">
+    <div class="quiz-score">
+      <div><div class="num" id="qCorrect">0</div><div class="lbl">Correct</div></div>
+      <div><div class="num" id="qWrong">0</div><div class="lbl">Wrong</div></div>
+      <div><div class="num" id="qStreak">0</div><div class="lbl">Streak</div></div>
+    </div>
 
-  function drawText(text, size, x, y, color = '#fff', shadow = true) {
-    ctx.font = `bold ${size}px -apple-system, Arial, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (shadow) {
-      ctx.fillStyle = '#000';
-      ctx.fillText(text, x + 2, y + 2);
-    }
-    ctx.fillStyle = color;
-    ctx.fillText(text, x, y);
-  }
+    <div class="quiz-prompt">
+      <div class="quiz-q-label" id="quizLabel">Choose the meaning</div>
+      <div class="quiz-q" id="quizQ">—</div>
+    </div>
 
-  let state = 'start';
-  let score = 0;
-  let spawnTimer = 0;
-  let lastTime = performance.now();
+    <div class="quiz-options" id="quizOptions"></div>
+    <div class="quiz-feedback" id="quizFeedback"></div>
+  </div>
 
-  function action() {
-    if (state === 'start') { state = 'playing'; bird.flap(); }
-    else if (state === 'playing') { bird.flap(); }
-    else if (state === 'gameover') {
-      bird.reset(); pipes = []; score = 0; spawnTimer = 0; state = 'start';
-    }
-  }
+  <div class="panel" id="panel-browse">
+    <div class="vocab-list" id="vocabList"></div>
+  </div>
 
-  function onTap(e) { e.preventDefault(); action(); }
-  canvas.addEventListener('touchstart', onTap, { passive: false });
-  canvas.addEventListener('mousedown', onTap);
-  window.addEventListener('keydown', e => {
-    if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); action(); }
-  });
+  <footer>
+    Built as a static website &middot; data stays in your browser &middot;
+    <a href="flappy.html">play flappy bird →</a>
+  </footer>
+</div>
 
-  function loop(now) {
-    const dt = now - lastTime;
-    lastTime = now;
+<div class="toast" id="toast"></div>
 
-    updateClouds();
-
-    if (state === 'playing') {
-      bird.update();
-      groundOffset += PIPE_SPEED;
-      spawnTimer += dt;
-      if (spawnTimer >= PIPE_INTERVAL) { spawnPipe(); spawnTimer = 0; }
-      updatePipes();
-      for (const p of pipes) {
-        if (!p.passed && p.x + PIPE_WIDTH < bird.x) { p.passed = true; score++; }
-      }
-      if (checkPipeCollision()) {
-        state = 'gameover';
-        if (score > highScore) { highScore = score; localStorage.setItem(HIGH_SCORE_KEY, score); }
-      }
-      if (bird.y + bird.r >= BASE_H - GROUND_HEIGHT) {
-        bird.y = BASE_H - GROUND_HEIGHT - bird.r;
-        state = 'gameover';
-        if (score > highScore) { highScore = score; localStorage.setItem(HIGH_SCORE_KEY, score); }
-      }
-      if (bird.y - bird.r < 0) { bird.y = bird.r; bird.vy = 0; }
-    } else if (state === 'start') {
-      bird.y = BASE_H / 2 + Math.sin(now / 200) * 8;
-      groundOffset += PIPE_SPEED;
-    } else if (state === 'gameover') {
-      if (bird.y + bird.r < BASE_H - GROUND_HEIGHT) {
-        bird.vy += GRAVITY;
-        bird.y += bird.vy;
-        bird.rot = Math.min(bird.rot + 5, 90);
-      } else {
-        bird.y = BASE_H - GROUND_HEIGHT - bird.r;
-      }
-    }
-
-    // sky
-    ctx.fillStyle = '#71c5cf';
-    ctx.fillRect(0, 0, BASE_W, BASE_H);
-    drawClouds();
-    drawPipes();
-    drawGround();
-    bird.draw();
-
-    if (state === 'start') {
-      drawText('Flappy Bird', 48, BASE_W / 2, 140);
-      drawText('Tap to flap', 22, BASE_W / 2, 220);
-      drawText('Avoid the pipes!', 18, BASE_W / 2, 252);
-      if (highScore > 0) drawText('Best: ' + highScore, 18, BASE_W / 2, 285);
-    } else if (state === 'playing') {
-      drawText(String(score), 56, BASE_W / 2, 70);
-    } else if (state === 'gameover') {
-      drawText('Game Over', 48, BASE_W / 2, 180);
-      drawText('Score: ' + score, 28, BASE_W / 2, 240);
-      drawText('Best: ' + highScore, 24, BASE_W / 2, 275);
-      drawText('Tap to restart', 22, BASE_W / 2, 330);
-    }
-
-    requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
-})();
-</script>
+<script src="vocab.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
